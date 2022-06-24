@@ -6,6 +6,7 @@ module Generics
     ) where
 
 import Language.Haskell.TH
+import Language.Haskell.TH.Quote
 import Data.Set ( Set )
 import qualified Data.Set as Set
 import Data.Map ( Map )
@@ -18,24 +19,24 @@ import Debug.Trace ( trace )
 type StateQ a = StateT (Map Type (Maybe Exp)) Q a
 type DecList = [Dec] -> [Dec]
 
-execEverywhere :: Name -> Name -> Q Type -> Q Type -> Q (Map Type (Maybe Exp))
+execEverywhere :: String -> Name -> Q Type -> Q Type -> Q (Map Type (Maybe Exp))
 execEverywhere mainFuncName transformFuncName mainType transformType = do 
   main <- mainType
   transform <- transformType
   execStateT (generateEverywhere mainFuncName transformFuncName main transform) Map.empty
 
-evalEverywhere :: Name -> Name -> Q Type -> Q Type -> Q [Dec]
+evalEverywhere :: String -> Name -> Q Type -> Q Type -> Q [Dec]
 evalEverywhere mainFuncName transformFuncName mainType transformType = do 
   main <- mainType
   transform <- transformType
   evalStateT (generateEverywhere mainFuncName transformFuncName main transform) Map.empty
 
-generateEverywhere :: Name -> Name -> Type -> Type -> StateQ [Dec]
+generateEverywhere :: String -> Name -> Type -> Type -> StateQ [Dec]
 generateEverywhere mainFuncName transformFuncName mainType transformType = do 
   (decls, _) <- runType mainType
   idExp <- lift [| id |]
   body <- gets $ (fromMaybe idExp) . fromJust . (Map.lookup mainType)
-  let alias = FunD mainFuncName [Clause [] (NormalB body) (decls [])]
+  let alias = FunD (mkName mainFuncName) [Clause [] (NormalB body) (decls [])]
   return $ [alias]
 
   where
