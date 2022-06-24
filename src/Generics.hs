@@ -2,7 +2,7 @@
 module Generics
     ( evalEverywhere
     , execEverywhere
-    , printToExp
+    -- , printToExp
     ) where
 
 import Language.Haskell.TH
@@ -13,21 +13,10 @@ import qualified Data.Map as Map
 import Data.Maybe
 import Control.Monad.State
 
--- import DataGenerics
-
 import Debug.Trace ( trace )
 
 type StateQ a = StateT (Map Type (Maybe Exp)) Q a
 type DecList = [Dec] -> [Dec]
-
-someFunc :: IO ()
-someFunc = putStrLn "Generics"
-
--- mainQ :: Type -> Type -> Q Exp
--- mainQ mainType transformType = execEverywhere mainType transformType >>= printToExp . Map.keys . (Map.filter isJust)
--- 
-printToExp :: Show a => a -> Q Exp
-printToExp a = stringE $ show a
 
 execEverywhere :: Name -> Name -> Q Type -> Q Type -> Q (Map Type (Maybe Exp))
 execEverywhere mainFuncName transformFuncName mainType transformType = do 
@@ -127,9 +116,6 @@ generateEverywhere mainFuncName transformFuncName mainType transformType = do
     foldDecls :: (DecList, Bool) -> (DecList, Bool) -> (DecList, Bool)
     foldDecls (accDecls, accUsed) (decls, used) = (accDecls . decls, accUsed || used)
 
-    -- TODO
-    -- What with type variables?
-
     generateFunction :: Name -> Name -> Maybe Exp -> StateQ DecList
     generateFunction funcName typeName transformFunc = 
       do
@@ -141,7 +127,6 @@ generateEverywhere mainFuncName transformFuncName mainType transformType = do
         generateDeclaration :: Dec -> StateQ Dec
         generateDeclaration (DataD _ name _ _ cons _) = 
           do 
-            -- funName <- lift $ newName $ "fun" ++ nameBase name
             cases <- mapM generateCase cons
             return $ FunD funcName cases
 
@@ -162,7 +147,6 @@ generateEverywhere mainFuncName transformFuncName mainType transformType = do
               case transformFunc of
                 Just func -> return $ AppE func caseBody
                 Nothing   -> return caseBody
-              -- if transformType to $ AppE transformFunc body
 
             apply :: Exp -> (Name, Type) -> StateQ Exp
             apply exp (var, t) = do 
@@ -171,38 +155,6 @@ generateEverywhere mainFuncName transformFuncName mainType transformType = do
                 Just func -> return $ AppE exp (AppE func (VarE var))
                 Nothing   -> return $ AppE exp (VarE var)
         
-
---------------------------------------- 
-
--- generateFunc :: Name -> Name -> Q [Dec]
--- generateFunc func fType = return [FunD (mkName "fun") [Clause [] body []]]
---     where
---         body = NormalB $ VarE func
-
--- printTypeByName :: Name -> Q String
--- printTypeByName typeName = 
---   do 
---     -- (TyConI (DataD _ name _ _ cons _)) <- reify typeName
---     dataInfo <- reify typeName
---     case dataInfo of
---         (TyConI (DataD _ name _ _ cons _)) -> do
---             t <- mapM printCon cons
---             trace (concat t) $ return $ concat t
---         info -> do 
---             trace (show info) $ return $ show info ++ "\n"
---             
---   
---   where
---     printCon :: Con -> Q String
---     printCon (NormalC name ts) = 
---       do
---         types <- mapM (\(_, t) -> showType t) ts
---         return $ concat $ types
---     
---     showType :: Type -> Q String
---     showType (ConT name) = 
---       do
---         exp <- printTypeByName name
---         return $ "ConT " ++ (show name) ++ "\n " ++ exp
---     showType t = return . show $ t
+printToExp :: Show a => a -> Q Exp
+printToExp a = stringE $ show a
 
