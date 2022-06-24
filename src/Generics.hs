@@ -29,22 +29,25 @@ someFunc = putStrLn "Generics"
 printToExp :: Show a => a -> Q Exp
 printToExp a = stringE $ show a
 
-execEverywhere :: Name -> Q Type -> Q Type -> Q (Map Type (Maybe Exp))
-execEverywhere transformFuncName mainType transformType = do 
+execEverywhere :: Name -> Name -> Q Type -> Q Type -> Q (Map Type (Maybe Exp))
+execEverywhere mainFuncName transformFuncName mainType transformType = do 
   main <- mainType
   transform <- transformType
-  execStateT (getAllSubtypes transformFuncName main transform) Map.empty
+  execStateT (generateEverywhere mainFuncName transformFuncName main transform) Map.empty
 
-evalEverywhere :: Name -> Q Type -> Q Type -> Q [Dec]
-evalEverywhere transformFuncName mainType transformType = do 
+evalEverywhere :: Name -> Name -> Q Type -> Q Type -> Q [Dec]
+evalEverywhere mainFuncName transformFuncName mainType transformType = do 
   main <- mainType
   transform <- transformType
-  evalStateT (getAllSubtypes transformFuncName main transform) Map.empty
+  evalStateT (generateEverywhere mainFuncName transformFuncName main transform) Map.empty
 
-getAllSubtypes :: Name -> Type -> Type -> StateQ [Dec]
-getAllSubtypes transformFuncName mainType transformType = do 
+generateEverywhere :: Name -> Name -> Type -> Type -> StateQ [Dec]
+generateEverywhere mainFuncName transformFuncName mainType transformType = do 
   (decls, _) <- runType mainType
-  return $ decls []
+  idExp <- lift [| id |]
+  body <- gets $ (fromMaybe idExp) . fromJust . (Map.lookup mainType)
+  let alias = FunD mainFuncName [Clause [] (NormalB body) (decls [])]
+  return $ [alias]
 
   where
     runType :: Type -> StateQ (DecList, Bool)
