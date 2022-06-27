@@ -54,14 +54,27 @@ generateEverywhere mainFuncName transformFuncName mainTypeUnresolved transformTy
       -- Check if type is in map
       isPresent <- gets $ Map.member t 
       {- trace (show varMap) $ -} 
-      trace (show (t, transformType) ++ " " ++ (show $ t == transformType)) $ if isPresent
+      {- trace (show (t, transformType) ++ " " ++ (show $ t == transformType)) $ -}
+      if isPresent
         then 
           return (id, t == transformType)
-        else case t of
+        else do 
+          -- Apply transformation here. 
+          funName <- lift $ lift $ newName "fun"
+          modify $ Map.insert t (Just $ VarE funName)
+
+          when (t == transformType) (do
+            applyTransform <- lift $ lift [| \f x -> $(return $ VarE transformFuncName) (f x) |]
+            let composeWithTransformation = \new old -> case old of
+                          Just oldExp -> Just $ AppE applyTransform oldExp
+                          Nothing  -> error $ "Old value for type " ++ show t ++ " is Nothing"
+            modify $ Map.insertWith composeWithTransformation t (Nothing))
+
+          (retDec, retUsed) <- case t of
               (ConT name) -> do
                 -- Add new function name to map
-                funName <- lift $ lift $ newName $ "fun" ++ nameBase name
-                modify $ Map.insert t (Just $ VarE funName)
+                -- funName <- lift $ lift $ newName $ "fun" ++ nameBase name
+                -- modify $ Map.insert t (Just $ VarE funName)
 
                 -- Run recursively for subtypes
                 typeInfo <- lift $ lift $ reify name
@@ -74,16 +87,18 @@ generateEverywhere mainFuncName transformFuncName mainTypeUnresolved transformTy
                               modify $ Map.insert t Nothing
                               return id
                             else do 
-                              transformFunc <- if t == transformType
-                                then trace ("equal " ++ show (t, transformType)) $ return $ Just $ VarE transformFuncName
-                                else return Nothing
-                              generateFunction funName name transformFunc
+                              -- transformFunc <- if t == transformType
+                              --   then trace ("equal " ++ show (t, transformType)) $ return $ Just $ VarE transformFuncName
+                              --   else return Nothing
+                              generateFunction funName name 
 
                 return (decs . newDecs, used || t == transformType)
 
               (AppT t1 t2) -> do
                 -- Insert Nothing to indicate that t is already visited
-                modify $ Map.insert t Nothing
+                -- appName <- lift $ lift $ newName $ "funApp"
+                -- modify $ Map.insert t (Just $ VarE appName)
+                -- modify $ Map.insert t Nothing
 
                 (decls2, used2) <- runType t2
 
@@ -94,17 +109,20 @@ generateEverywhere mainFuncName transformFuncName mainTypeUnresolved transformTy
                                     Nothing  -> runType t1
                 
                 -- Check if there is transformType as subtype of t
-                if used1 || used2
+                appDec <- if used1 || used2
                   then do
                     -- Insert proper Exp
                     idExp <- lift $ lift [| id |]
                     exp1 <- gets $ (fromMaybe idExp) . fromJust . (Map.lookup t1)
                     exp2 <- gets $ (fromMaybe idExp) . fromJust . (Map.lookup t2)
                     let appExp = AppE exp1 exp2
-                    modify $ Map.insert t (Just appExp)
-                  else return ()
+                    let alias = \t -> (FunD funName [Clause [] (NormalB appExp) []]):t
+                    return alias
+                  else do 
+                    modify $ Map.insert t Nothing
+                    return id
 
-                return (decls1 . decls2, used1 || used2 || t == transformType)
+                return (decls1 . decls2 . appDec, used1 || used2 || t == transformType)
 
               ListT -> do 
                 mapExp <- lift $ lift [| map |]
@@ -113,6 +131,13 @@ generateEverywhere mainFuncName transformFuncName mainTypeUnresolved transformTy
               t -> do 
                 modify $ Map.insert t Nothing
                 return (id, False) 
+        
+          -- when (t == transformType) (do 
+          --           exp <- gets $ fromJust . (Map.lookup t)
+          --           trace (show exp) $ return ())
+          -- maybeFunc <- gets $ fromJust . fromJust . (Map.lookup t) -- for t == transformType we can assume that map contains Just Exp
+          -- --
+          return (retDec, retUsed)
       where
         getFirstFreeVar :: Type -> Q (Maybe Name)
         getFirstFreeVar t = getNthVar 0 t
@@ -143,8 +168,8 @@ generateEverywhere mainFuncName transformFuncName mainTypeUnresolved transformTy
     foldDecls :: (DecList, Bool) -> (DecList, Bool) -> (DecList, Bool)
     foldDecls (accDecls, accUsed) (decls, used) = (accDecls . decls, accUsed || used)
 
-    generateFunction :: Name -> Name -> Maybe Exp -> StateQ DecList
-    generateFunction funcName typeName transformFunc = 
+    generateFunction :: Name -> Name -> StateQ DecList
+    generateFunction funcName typeName = 
       do
         (TyConI dataDecl) <- lift $ lift $ reify typeName
         funDecl <- generateDeclaration dataDecl
@@ -164,7 +189,8 @@ generateEverywhere mainFuncName transformFuncName mainTypeUnresolved transformTy
             names <- lift $ lift $ mapM newName (map (const "x") types)  
             pat <- pattern names
             varMap <- ask
-            let substitutedTypes = applySubstitution varMap $ map snd types
+            -- Normalize types
+            substitutedTypes <- lift $ lift $ mapM resolveTypeSynonyms (applySubstitution varMap $ map snd types)
             exp <- body names substitutedTypes
             let typeVarArgs = map (\v -> VarP $ tvName v) vars
             return $ Clause (typeVarArgs ++ [pat]) (NormalB exp) []
@@ -174,10 +200,10 @@ generateEverywhere mainFuncName transformFuncName mainTypeUnresolved transformTy
               return $ ConP conName (map VarP varNames)
 
             body varNames types = do
-              caseBody <- foldM apply (ConE conName) (zip varNames types)
-              case transformFunc of
-                Just func -> return $ AppE func caseBody
-                Nothing   -> return caseBody
+              foldM apply (ConE conName) (zip varNames types)
+              -- case transformFunc of
+              --   Just func -> return $ AppE func caseBody
+              --   Nothing   -> return caseBody
 
             apply :: Exp -> (Name, Type) -> StateQ Exp
             apply exp (var, t) = do 
