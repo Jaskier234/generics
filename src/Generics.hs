@@ -34,7 +34,8 @@ evalEverywhere mainFuncName transformFuncName mainType transformType = do
   evalStateT (runReaderT (generateEverywhere mainFuncName transformFuncName main transform) Map.empty) Map.empty
 
 generateEverywhere :: String -> Name -> Type -> Type -> StateQ [Dec]
-generateEverywhere mainFuncName transformFuncName mainType transformType = do 
+generateEverywhere mainFuncName transformFuncName mainTypeUnresolved transformTypeUnresolved = do 
+  mainType <- lift $ lift $ resolveTypeSynonyms mainTypeUnresolved
   (decls, _) <- runType mainType
   idExp <- lift $ lift [| id |]
   body <- gets $ (fromMaybe idExp) . fromJust . (Map.lookup mainType)
@@ -43,13 +44,17 @@ generateEverywhere mainFuncName transformFuncName mainType transformType = do
 
   where
     runType :: Type -> StateQ (DecList, Bool)
-    runType beforeSubstT = {- trace (show (beforeSubstT, transformType) ++ " " ++ (show $ beforeSubstT == transformType)) $ -} do
-      -- Check if type is in map
+    runType beforeSubstT = do
+      -- Simplify types
       varMap <- ask
-      let t = applySubstitution varMap beforeSubstT
+      let t' = applySubstitution varMap beforeSubstT
+      t <- lift $ lift $ resolveTypeSynonyms t'
+      transformType <- lift $ lift $ resolveTypeSynonyms transformTypeUnresolved
+
+      -- Check if type is in map
       isPresent <- gets $ Map.member t 
       {- trace (show varMap) $ -} 
-      if isPresent
+      trace (show (t, transformType) ++ " " ++ (show $ t == transformType)) $ if isPresent
         then 
           return (id, t == transformType)
         else case t of
@@ -70,7 +75,7 @@ generateEverywhere mainFuncName transformFuncName mainType transformType = do
                               return id
                             else do 
                               transformFunc <- if t == transformType
-                                then return $ Just $ VarE transformFuncName
+                                then trace ("equal " ++ show (t, transformType)) $ return $ Just $ VarE transformFuncName
                                 else return Nothing
                               generateFunction funName name transformFunc
 
