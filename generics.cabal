@@ -23,7 +23,6 @@ source-repository head
 
 library
   exposed-modules:
-      DataGenerics
       DataTypeable
       Func.Abs
       Func.ErrM
@@ -33,6 +32,7 @@ library
       Func.Skel
       Generics
       Quotes
+      Test
   other-modules:
       Paths_generics
   hs-source-dirs:

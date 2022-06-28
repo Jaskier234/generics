@@ -3,7 +3,7 @@ module Main where
 
 import Generics
 import Quotes
-import DataGenerics
+import Test
 import Language.Haskell.TH
 
 data A = A Int String [Int] | B Int | C String
