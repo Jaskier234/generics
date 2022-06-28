@@ -24,7 +24,6 @@ source-repository head
 library
   exposed-modules:
       Data
-      DataTypeable
       Example
       Func.Abs
       Func.ErrM
