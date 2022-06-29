@@ -1,25 +1,30 @@
 {-# language TemplateHaskell #-}
+{-# language DeriveDataTypeable #-}
+
 module Example where
 
 import Generics
+import Data.Data
+import Data.Generics.Schemes
+import Data.Generics.Aliases
 
 data Prog 
-    = Prog [Decl] deriving (Show, Eq)
+    = Prog [Decl] deriving (Show, Eq, Data)
 
 data Decl 
     = Type String [Field] 
-    | Fun String Expr deriving (Show, Eq)
+    | Fun String Expr deriving (Show, Eq, Data)
 
 data Field 
     = FInt String 
-    | FData String Decl deriving (Show, Eq)
+    | FData String Decl deriving (Show, Eq, Data)
 
 data Expr 
     = Add Expr Expr
     | Sub Expr Expr
     | Mul Expr Expr
     | Div Expr Expr
-    | Lit Int deriving (Show, Eq)
+    | Lit Int deriving (Show, Eq, Data)
 
 -- Simplifying expressions
 
@@ -51,16 +56,15 @@ program = Prog [
     Type "d2" [FData "r" (Type "n" [FInt "n1", FInt "n2"])],
     Fun "f2" (Lit 2)]
 
-test1 :: IO ()
-test1 = do 
-  putStrLn "test1"
-  putStrLn "Before transformation"
-  print program
-  putStrLn "After simplProg" 
-  print $ simplProg program
-  putStrLn "After simplProg'" 
-  print $ simplProg' program
 
+testEq :: (Eq a, Show a) => String -> a -> a -> IO ()
+testEq name e1 e2 = do 
+  if e1 == e2 
+    then putStrLn $ "test " ++ name ++ " OK"
+    else do 
+      putStrLn $ "test " ++ name ++ " Failed" 
+      putStrLn $ "e1: " ++ show e1
+      putStrLn $ "e2: " ++ show e2
 
 -- Mutual recursion
 
@@ -70,10 +74,7 @@ transformField (FData name decl) = FData ("n_" ++ name) decl
 
 $(everywhere1 "simplTypeDecl" 'transformField [t| Prog |] [t| Field |])
 
-test2 :: IO ()
-test2 = do
-  putStrLn "After simplTypeDecl"
-  print $ simplTypeDecl program
-
-exampleMain = test1 >> test2
-
+exampleMain = do
+  testEq "simplProg" (simplProg program) (everywhere (mkT simplProg) program)
+  testEq "simplProg'" (simplProg' program) (everywhere (mkT simplProg)  program)
+  testEq "transformField" (simplTypeDecl program) (everywhere (mkT transformField) program)
